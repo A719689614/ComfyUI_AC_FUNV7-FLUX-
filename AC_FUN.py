@@ -1,0 +1,2 @@
+class CATEGORY:
+    CATEGORY = "♐AC_FUNV7.0"
