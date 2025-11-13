@@ -3,7 +3,7 @@ import torch
 import os
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "comfy"))
-from comfy.comfy_types import IO, ComfyNodeABC, InputTypeDict, FileLocator
+from comfy.comfy_types import IO, ComfyNodeABC
 import comfy.sd
 import folder_paths
 import random
@@ -98,8 +98,9 @@ class UNETLoader(CATEGORY):
                              }
     RETURN_TYPES = ("MODEL","CLIP", "VAE")
     FUNCTION = "load_unet"
-    @classmethod
-    def load_clip(self, clip_name1, clip_name2, type, device="default"):
+  
+    def load_unet(self, unet_name, weight_dtype, vae_name, clip_name1, clip_name2, type, device="default"):
+        # VAE加载
         clip_type = getattr(comfy.sd.CLIPType, type.upper(), comfy.sd.CLIPType.STABLE_DIFFUSION)
 
         clip_path1 = folder_paths.get_full_path_or_raise("text_encoders", clip_name1)
@@ -110,10 +111,6 @@ class UNETLoader(CATEGORY):
             model_options["load_device"] = model_options["offload_device"] = torch.device("cpu")
 
         clip = comfy.sd.load_clip(ckpt_paths=[clip_path1, clip_path2], embedding_directory=folder_paths.get_folder_paths("embeddings"), clip_type=clip_type, model_options=model_options)
-        return clip
-  
-    def load_unet(self, unet_name, weight_dtype, vae_name):
-        clip = self.load_clip()
 
         if vae_name in ["taesd", "taesdxl", "taesd3", "taef1"]:
             sd = self.load_taesd(vae_name)
@@ -123,6 +120,7 @@ class UNETLoader(CATEGORY):
         vae = comfy.sd.VAE(sd=sd)
         vae.throw_exception_if_invalid()
 
+        # 模型加载
         model_options = {}
         if weight_dtype == "fp8_e4m3fn":
             model_options["dtype"] = torch.float8_e4m3fn
@@ -139,8 +137,12 @@ class UNETLoader(CATEGORY):
 
 
 class CLIPTextEncode(ComfyNodeABC, CATEGORY):
+    
     Condisiton_list = ["条件零化", "保持条件"]
     translate_list = ["zh","en"]
+    MAX_RESOLUTION = 8192
+    def __init__(self):
+        self.device = comfy.model_management.intermediate_device()
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -153,16 +155,19 @@ class CLIPTextEncode(ComfyNodeABC, CATEGORY):
                 "apiid":  ('STRING', {'multiline': False}),
                 "apikey":  ('STRING', {'multiline': False}),
                 "translate":('BOOLEAN',{'default': False,}),
-                "condition":(s.Condisiton_list,)
+                "condition":(s.Condisiton_list,),
+                "width": ("INT", {"default": 512, "min": 16, "max": s.MAX_RESOLUTION, "step": 8, "tooltip": "The width of the latent images in pixels."}),
+                "height": ("INT", {"default": 512, "min": 16, "max": s.MAX_RESOLUTION, "step": 8, "tooltip": "The height of the latent images in pixels."}),
+                "batch_size": ("INT", {"default": 1, "min": 1, "max": 4096, "tooltip": "The number of latent images in the batch."})
             }
         }
-    RETURN_TYPES = ("CONDITIONING","CONDITIONING")
-    RETURN_NAMES = ("Positive","Negative")
+    RETURN_TYPES = ("CONDITIONING","CONDITIONING","LATENT")
+    RETURN_NAMES = ("Positive","Negative","Latent")
     FUNCTION = "encode"
 
     @classmethod
-    def text_translation(self, text,translate_from,translate_to, apiid, apikey):
-        query = text
+    def text_translation(self, positive,translate_from,translate_to, apiid, apikey):
+        query = positive
         appid = apiid
         appkey = apikey
         from_lang = translate_from
@@ -197,21 +202,25 @@ class CLIPTextEncode(ComfyNodeABC, CATEGORY):
             n = [torch.zeros_like(t[0]), d]
             c.append(n)
         return c
-    def encode(self, clip, posivite, negative, condition, translate):
+    def encode(self, clip, positive, translate_from,translate_to, apiid, apikey, negative, condition, translate,width, height, batch_size=1):
         if clip is None:
             raise RuntimeError("ERROR: clip input is invalid: None\n\nIf the clip is from a checkpoint loader node your checkpoint does not contain a valid clip or text encoder model.")
         
         if translate == True:
-            tokens_1 = clip.tokenize(self.text_translation(posivite))
+            tokens_1 = clip.tokenize(self.text_translation(positive,translate_from,translate_to, apiid, apikey))
         else:
-            tokens_1 = clip.tokenize(posivite)
+            tokens_1 = clip.tokenize(positive)
         tokens_2 = clip.tokenize(negative)
 
-        posivite = clip.encode_from_tokens_scheduled(tokens_1)
+        positive = clip.encode_from_tokens_scheduled(tokens_1)
 
         if condition == "条件零化":
             negative = self.zero_out( clip.encode_from_tokens_scheduled(tokens_2))
         if condition == "保持条件":
             negative = clip.encode_from_tokens_scheduled(tokens_2)
-        return (posivite, negative)
+        
+        # 返回潜空间设置
+        latent = torch.zeros([batch_size, 4, height // 8, width // 8], device=self.device)
+
+        return (positive, negative, {"samples":latent})
   
