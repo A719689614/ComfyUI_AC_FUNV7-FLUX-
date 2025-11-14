@@ -11,7 +11,8 @@
   * 安装方法一：git clone https://github.com/A719689614/ComfyUI_AC_FUNV7-FLUX-.git
   * 安装方法二：下载zip文件解压到你的custom_nodes目录底下，然后重启ComfyUI即可
 
-![QQ截图20251114161521](D:\AC_FUNCTION\ComfyUI\custom_nodes\ComfyUI-By-AC_FUNV7.0_Flux_Suit\QQ截图20251114161521.png)
+<img width="1920" height="1070" alt="QQ截图20251114161521" src="https://github.com/user-attachments/assets/bf099d9e-4aa1-44a9-b17f-7d40752456bf" />
+
 
 ### 三、关于Cc啊程、
 
