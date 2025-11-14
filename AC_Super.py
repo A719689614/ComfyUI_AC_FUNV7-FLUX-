@@ -10,6 +10,7 @@ import random
 import requests
 from hashlib import md5
 from .AC_FUN import CATEGORY
+import node_helpers
 
 
 class UNETLoader(CATEGORY):
@@ -150,6 +151,7 @@ class CLIPTextEncode(ComfyNodeABC, CATEGORY):
                 "positive": ("STRING", {"multiline": True, "dynamicPrompts": True, "tooltip": "The text to be encoded."}),
                 "negative": ("STRING", {"multiline": True, "dynamicPrompts": True, "tooltip": "The text to be encoded."}),
                 "clip": ("CLIP", {"tooltip": "The CLIP model used for encoding the text."}),
+                "guidance": ("FLOAT", {"default": 3.0, "min": 0.0, "max": 100.0, "step": 0.1,}),
                 "translate_from": (s.translate_list,),
                 "translate_to": (s.translate_list,),
                 "apiid":  ('STRING', {'multiline': False}),
@@ -202,7 +204,7 @@ class CLIPTextEncode(ComfyNodeABC, CATEGORY):
             n = [torch.zeros_like(t[0]), d]
             c.append(n)
         return c
-    def encode(self, clip, positive, translate_from,translate_to, apiid, apikey, negative, condition, translate,width, height, batch_size=1):
+    def encode(self, clip, guidance, positive, translate_from,translate_to, apiid, apikey, negative, condition, translate,width, height, batch_size=1):
         if clip is None:
             raise RuntimeError("ERROR: clip input is invalid: None\n\nIf the clip is from a checkpoint loader node your checkpoint does not contain a valid clip or text encoder model.")
         
@@ -221,6 +223,7 @@ class CLIPTextEncode(ComfyNodeABC, CATEGORY):
         
         # 返回潜空间设置
         latent = torch.zeros([batch_size, 4, height // 8, width // 8], device=self.device)
+        node_helpers.conditioning_set_values(positive, {"guidance": guidance})
 
         return (positive, negative, {"samples":latent})
   
